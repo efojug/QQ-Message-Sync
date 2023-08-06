@@ -602,12 +602,10 @@ clientName = 'main'
 from mcdreforged.api.all import *
 import base64
 import os
-import sys
 import socket
+import grpc
 from plugins.qqmsgsync.qqmsgsync import bot_pb2 as bot__pb2
 from plugins.qqmsgsync.qqmsgsync import bot_pb2_grpc
-import grpc
-sys.path.append(os.getcwd())
 
 els = False
 tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -699,4 +697,4 @@ def try_connect():
 
 def send_msg(message):
     global clientName
-    return bot_pb2.Message(message=message, clientName=clientName, senderId=0)
+    return bot__pb2.Message(message=message, clientName=clientName, senderId=0)
