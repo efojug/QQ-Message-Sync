@@ -708,7 +708,7 @@ def on_user_info(server: PluginServerInterface, info: Info):
         els = True
         return
 
-    if not els:
+    if not els and info.player is not None and info.content is not None:
         smsgq('Message#{"senderId":0, "message":"' + "[" + info.player + "] " + info.content + '"}')
 
 def sync_qqmsg_for_mc(player: str, info: str):
